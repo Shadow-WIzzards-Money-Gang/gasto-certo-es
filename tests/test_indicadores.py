@@ -71,3 +71,66 @@ def test_ranking_soma_bate_com_registros():
     assert r.loc["A", "Variação %"] == pytest.approx(400)
     assert np.isnan(r.loc["B", "Variação %"])            # sem base no ano anterior
     assert r["Pago 2025"].sum() == df.loc[df.Ano == 2025, "ValorPago"].sum()
+
+
+
+# ================================================ Pergunta 2: compras compartilhadas
+def compras(linhas):
+    return pd.DataFrame(linhas, columns=["Ano", "CodigoElementoDespesa", "ElementoDespesa", "SubelementoDespesa",
+                                         "UnidadeGestora", "IdFavorecido", "TipoLicitacao", "ValorPago"])
+
+
+def test_base_compras_filtra_universo():
+    df = compras([
+        [2024, "30", "MATERIAL", "MATERIAL DE LIMPEZA", "A", "1", "PREGÃO", 10],
+        [2024, "11", "VENCIMENTOS", "SALÁRIO", "A", "2", "NÃO APLICÁVEL - DEMAIS CASOS", 999],    # folha
+        [2024, "39", "SERVIÇOS PJ", "SERVIÇOS DE ENERGIA ELÉTRICA", "A", "3", "INEXIGÍVEL", 50],  # concessionária
+        [2024, "30", "MATERIAL", "SUPRIMENTO DE FUNDOS - MATERIAL", "A", "4", "", 5],             # adiantamento
+        [2024, "30", "MATERIAL", "MATERIAL DE LIMPEZA", "B", "5", "DISPENSA DE LICITAÇÃO", 0],    # valor zero
+    ])
+    b = ind.base_compras(df)
+    assert b["ValorPago"].tolist() == [10]
+
+
+def test_inexigibilidade_nao_conta_como_dispensa():
+    df = compras([
+        [2024, "30", "M", "X", "A", "1", "DISPENSA DE LICITAÇÃO", 10],
+        [2024, "30", "M", "X", "B", "2", "INEXIGÍVEL", 10],
+        [2024, "30", "M", "X", "C", "3", "INEXIGIBILIDADE DE LICITAÇÃO", 10],
+        [2024, "30", "M", "X", "D", "4", "ADESÃO À ATA DE REGISTRO DE PREÇOS", 10],
+    ])
+    t = ind.indicadores_por_subelemento(ind.base_compras(df)).iloc[0]
+    assert t["Pct_pag_dispensa"] == 25 and t["Pct_valor_ata"] == 25
+    assert t["UGs"] == 4 and t["Fornecedores"] == 4
+
+
+def test_score_ordena_e_respeita_min_ugs():
+    linhas = []
+    for i in range(6):   # FRAG: 6 UGs, 6 fornecedores, tickets pequenos, tudo por dispensa
+        linhas.append([2024, "30", "M", "FRAG", f"U{i}", f"F{i}", "DISPENSA DE LICITAÇÃO", 100])
+    for i in range(6):   # CENTRAL: 6 UGs, 1 fornecedor, tickets grandes, pregão
+        linhas.append([2024, "30", "M", "CENTRAL", f"U{i}", "F0", "PREGÃO", 10_000])
+    linhas.append([2024, "30", "M", "SO_UMA_UG", "U0", "F9", "DISPENSA DE LICITAÇÃO", 1])
+    s = ind.score_oportunidade(ind.indicadores_por_subelemento(ind.base_compras(compras(linhas))), min_ugs=5)
+    assert s["SubelementoDespesa"].tolist() == ["FRAG", "CENTRAL"]
+    assert s["Score"].between(0, 100).all()
+
+
+def test_ic_wilson_conhecido_e_limites():
+    ic = ind.ic_wilson(50, 100, 0.95)
+    assert ic.media == 50 and ic.inf == pytest.approx(40.38, abs=0.05) and ic.sup == pytest.approx(59.62, abs=0.05)
+    zero = ind.ic_wilson(0, 20)
+    assert zero.inf == 0 and zero.sup > 0          # não fica negativo nem colapsa em zero
+    assert ind.ic_wilson(0, 0) is None
+
+
+def test_ic_bootstrap_mediana_contem_mediana():
+    ic = ind.ic_bootstrap_mediana(pd.Series(range(1, 101)))
+    assert ic.inf <= ic.media <= ic.sup and ic.media == 50.5
+
+
+def test_simular_economia():
+    t = pd.DataFrame({"SubelementoDespesa": ["A", "B"], "Valor_pago": [1000.0, 500.0],
+                      "Valor_dispensa": [200.0, 100.0]})
+    assert ind.simular_economia(t, ["A"], 0.10, "dispensa") == (200.0, 20.0)
+    assert ind.simular_economia(t, ["A", "B"], 0.10, "total") == (1500.0, 150.0)
