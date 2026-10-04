@@ -7,7 +7,7 @@ Painel para gestores públicos do Espírito Santo responderem a duas perguntas c
 
 Cada número exibido pode ser rastreado até os pagamentos que o produziram.
 
-- **App publicado:** [PREENCHER: link do Streamlit Community Cloud]
+- **App publicado:** https://gastocertoes.streamlit.app/
 - **Público:** gestores da SEFAZ, da SEGER e do controle interno dos órgãos estaduais
 - **Turma:** 2ESPH · **Integrantes:** Antonio Neto, Felipe Mendes, Mauro Carlos
 
@@ -26,7 +26,7 @@ Cada número exibido pode ser rastreado até os pagamentos que o produziram.
 
 ## Como executar localmente
 
-Requer **Python 3.11 ou mais recente** (o projeto usa pandas 3).
+Requer **Python 3.11 ou mais recente**.
 
 ```bash
 git clone https://github.com/Shadow-WIzzards-Money-Gang/gasto-certo-es.git
