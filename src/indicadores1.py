@@ -60,46 +60,6 @@ def ic_diferenca(a: pd.Series, b: pd.Series, confianca: float = 0.95) -> IC | No
     return IC(dif, inf, sup, na + nb)
 
 
-def ic_media_bootstrap(valores: pd.Series, confianca: float = 0.95, n_boot: int = 5000,
-                       semente: int = 42) -> IC | None:
-    """IC da média por bootstrap percentil.
-
-    Por que existe: o IC pela distribuição t é simétrico (média ± margem). Quando um ou
-    dois meses são gigantes, a margem fica maior que a média e o limite inferior sai
-    NEGATIVO, o que é impossível para um gasto. O bootstrap reamostra os próprios meses,
-    então o intervalo nunca sai do intervalo dos dados (nunca negativo) e respeita a assimetria.
-    """
-    v = pd.Series(valores).dropna().astype(float).to_numpy()
-    n = len(v)
-    if n < 2:
-        return None
-    rng = np.random.default_rng(semente)
-    medias = rng.choice(v, size=(n_boot, n), replace=True).mean(axis=1)
-    a = (1 - confianca) / 2
-    return IC(float(v.mean()), float(np.quantile(medias, a)), float(np.quantile(medias, 1 - a)), n)
-
-
-def ic_diferenca_bootstrap(a: pd.Series, b: pd.Series, confianca: float = 0.95, n_boot: int = 5000,
-                           semente: int = 42) -> IC | None:
-    """IC da diferença de médias (b - a) por bootstrap percentil."""
-    a = pd.Series(a).dropna().astype(float).to_numpy()
-    b = pd.Series(b).dropna().astype(float).to_numpy()
-    if len(a) < 2 or len(b) < 2:
-        return None
-    rng = np.random.default_rng(semente)
-    dif = (rng.choice(b, (n_boot, len(b))).mean(axis=1) - rng.choice(a, (n_boot, len(a))).mean(axis=1))
-    q = (1 - confianca) / 2
-    return IC(float(b.mean() - a.mean()), float(np.quantile(dif, q)), float(np.quantile(dif, 1 - q)), len(a) + len(b))
-
-
-def concentracao_maior_mes(serie_ano: pd.Series) -> tuple[pd.Timestamp | None, float]:
-    """Mês com maior valor e a fração do total do ano que ele representa."""
-    tot = float(serie_ano.sum())
-    if tot <= 0:
-        return None, 0.0
-    return serie_ano.idxmax(), float(serie_ano.max() / tot)
-
-
 def limite_alerta(base: pd.Series, confianca: float = 0.95) -> float | None:
     """Limite superior do INTERVALO DE PREDIÇÃO de um mês, a partir do ano-base.
 
