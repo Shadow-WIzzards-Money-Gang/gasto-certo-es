@@ -46,8 +46,7 @@ COLUNAS_USADAS = COLUNAS_OBRIGATORIAS + [
     "Favorecido",
     "TipoFavorecido",
     "CpfCnpjNis",
-    "Funcao",
-    "HistoricoDocumento",
+    "Funcao"
 ]
 
 # Medidas monetárias. Empenhado, liquidado, pago e RAP são medidas DISTINTAS:
