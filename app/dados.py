@@ -1,12 +1,24 @@
 """Carregamento dos dados tratados para o app, com cache e mensagens de erro amigáveis."""
+import subprocess
+import sys
+
 import pandas as pd
 import streamlit as st
 
-from src import classificacao, etl
+from src import classificacao, config, etl
 
 
-@st.cache_data(show_spinner="Carregando dados tratados...")
+def _rodar_etl() -> None:
+    """Roda o ETL num processo separado (a memória dele é liberada ao terminar)."""
+    r = subprocess.run([sys.executable, "-m", "src.etl"], cwd=config.RAIZ, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise etl.ErroImportacao("Falha ao processar os arquivos de data/raw: " + (r.stderr or r.stdout)[-800:])
+
+
+@st.cache_resource(show_spinner="Carregando dados... na primeira abertura o processamento dos arquivos leva cerca de 1 minuto.")
 def _carregar():
+    if not config.ARQ_PARQUET.exists():   # ex.: primeira execução no Streamlit Community Cloud
+        _rodar_etl()
     return etl.carregar_processado()
 
 
@@ -19,7 +31,7 @@ def obter_dados() -> pd.DataFrame:
         st.stop()
 
 
-@st.cache_data(show_spinner="Classificando despesas...")
+@st.cache_resource(show_spinner="Classificando despesas...")
 def _classificado() -> pd.DataFrame:
     # sem argumentos: evita o Streamlit ter que "hashear" milhões de linhas a cada clique
     return classificacao.marcar(_carregar())

@@ -11,6 +11,8 @@ st.set_page_config(page_title="Dados e auditoria", layout="wide")
 st.title("Dados e auditoria")
 st.write("De onde vêm os números: arquivos carregados e o que foi removido em cada etapa.")
 
+obter_dados()            # garante que o ETL já rodou (gera a auditoria)
+
 try:
     aud = etl.carregar_auditoria()
 except etl.ErroImportacao as e:
