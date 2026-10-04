@@ -16,6 +16,7 @@ def rs(v: float) -> str:
 
 AZUL, CINZA, CRITICO, FAIXA = "#2a78d6", "#8c8c8c", "#d03b3b", "rgba(140,140,140,0.18)"
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+ANO_BASE, ANO_COMPARA = 2024, 2025   # comparação estatística fixa do projeto
 
 st.set_page_config(page_title="Gasto evitável", layout="wide")
 st.title("Gasto evitável")
@@ -56,9 +57,14 @@ tot_ant = recorte.loc[recorte["Ano"] == ano - 1, "ValorPago"].sum()
 alertas = ind.alertas_mensais(serie, ano, conf)
 dea = recorte_dea.loc[recorte_dea["Ano"] == ano, "ValorPago"].sum()
 
+tem_base = (ano - 1) in anos            # 2024 selecionado -> não há 2023 nos dados
+if not tem_base:
+    alertas["alerta"] = False           # sem ano anterior, não há base para alerta
+    alertas["limite"] = None
+
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(f"Juros/multas pagos em {ano}", brl_curto(tot_atual), help=brl(tot_atual),
-          delta=(f"{(tot_atual / tot_ant - 1):+.1%} vs {ano - 1}" if tot_ant > 0 else None),
+          delta=(f"{(tot_atual / tot_ant - 1):+.1%} vs {ano - 1}" if tem_base and tot_ant > 0 else None),
           delta_color="inverse")
 c2.metric(f"Pago em {ano - 1}", brl_curto(tot_ant), help=brl(tot_ant))
 c3.metric("Meses em alerta", f"{int(alertas['alerta'].sum())} de 12")
@@ -76,9 +82,10 @@ if lim is not None:
     fig.add_trace(go.Scatter(x=MESES, y=[lim] * 12, mode="lines", line=dict(color=CINZA, width=1, dash="dot"),
                              name=f"Limite de alerta ({conf:.0%}, base {ano - 1})",
                              hovertemplate="Limite: R$ %{y:,.2f}<extra></extra>"))
-fig.add_trace(go.Scatter(x=MESES, y=base.values, mode="lines+markers", name=str(ano - 1),
-                         line=dict(color=CINZA, width=2), marker=dict(size=8),
-                         hovertemplate=f"{ano - 1} · %{{x}}: R$ %{{y:,.2f}}<extra></extra>"))
+if tem_base:
+    fig.add_trace(go.Scatter(x=MESES, y=base.values, mode="lines+markers", name=str(ano - 1),
+                             line=dict(color=CINZA, width=2), marker=dict(size=8),
+                             hovertemplate=f"{ano - 1} · %{{x}}: R$ %{{y:,.2f}}<extra></extra>"))
 fig.add_trace(go.Scatter(x=MESES, y=atual.values, mode="lines+markers", name=str(ano),
                          line=dict(color=AZUL, width=2), marker=dict(size=8),
                          hovertemplate=f"{ano} · %{{x}}: R$ %{{y:,.2f}}<extra></extra>"))
@@ -97,30 +104,38 @@ st.caption(f"Período: jan/{ano - 1}–dez/{ano} · Medida: soma de ValorPago ·
            " · Mês sem pagamento conta como R$ 0. Alerta = mês acima do limite superior do intervalo de "
            f"predição calculado com os 12 meses de {ano - 1}.")
 
-# ---------------------------------------------------------------- comparação estatística
-st.subheader(f"{ano} foi diferente de {ano - 1}?")
+# ---------------------------------------------------------------- comparação estatística (fixa)
+st.subheader(f"{ANO_COMPARA} foi diferente de {ANO_BASE}?")
+st.caption(f"Esta comparação é sempre {ANO_BASE} × {ANO_COMPARA}, independente do ano escolhido no filtro. "
+           "O filtro de unidade gestora e o nível de confiança continuam valendo.")
+
+serie_cmp = ind.serie_mensal(recorte, [ANO_BASE, ANO_COMPARA])
+base_cmp = serie_cmp[serie_cmp.index.year == ANO_BASE]
+atual_cmp = serie_cmp[serie_cmp.index.year == ANO_COMPARA]
+
 # avisa quando um único mês domina o ano (outlier): é o que distorce médias e intervalos
-for nome_ano, s_ano in ((ano - 1, base), (ano, atual)):
+for nome_ano, s_ano in ((ANO_BASE, base_cmp), (ANO_COMPARA, atual_cmp)):
     mes_max, frac = ind.concentracao_maior_mes(s_ano)
     if mes_max is not None and frac >= 0.4:
         st.warning(f"⚠ Em {nome_ano}, **{MESES[mes_max.month - 1]}/{mes_max.year}** concentra **{frac:.0%}** do total "
-                   "do ano. Confira os registros desse mês abaixo: pode ser um pagamento pontual grande "
+                   "do ano. Confira os registros desse mês: pode ser um pagamento pontual grande "
                    "(ex.: acordo ou decisão judicial) ou uma categoria classificada errado.")
 
-ic_a, ic_b = ind.ic_media_bootstrap(base, conf), ind.ic_media_bootstrap(atual, conf)
-ic_d = ind.ic_diferenca_bootstrap(base, atual, conf)
+ic_a, ic_b = ind.ic_media_bootstrap(base_cmp, conf), ind.ic_media_bootstrap(atual_cmp, conf)
+ic_d = ind.ic_diferenca_bootstrap(base_cmp, atual_cmp, conf)
 if ic_a and ic_b and ic_d:
     tab = pd.DataFrame({
-        "": [f"Média mensal {ano - 1}", f"Média mensal {ano}", f"Diferença ({ano} − {ano - 1})"],
+        "": [f"Média mensal {ANO_BASE}", f"Média mensal {ANO_COMPARA}", f"Diferença ({ANO_COMPARA} − {ANO_BASE})"],
         "Estimativa": [brl(ic_a.media), brl(ic_b.media), brl(ic_d.media)],
         f"IC {conf:.0%} inferior": [brl(ic_a.inf), brl(ic_b.inf), brl(ic_d.inf)],
         f"IC {conf:.0%} superior": [brl(ic_a.sup), brl(ic_b.sup), brl(ic_d.sup)],
     })
     st.dataframe(tab, hide_index=True, width="stretch")
     st.caption("A diferença pode ser negativa: significa redução.")
-        # ---- leitura em português do que a tabela mostra
+
+    # ---- leitura em português do que a tabela mostra
     quem = "nas unidades gestoras somadas" if ug == ugs[0] else f"em {ug.title()}"
-    for a_, ic_ in ((ano - 1, ic_a), (ano, ic_b)):
+    for a_, ic_ in ((ANO_BASE, ic_a), (ANO_COMPARA, ic_b)):
         st.markdown(
             f"- **Em {a_}**, o gasto típico com juros/multas {quem} ficou entre "
             f"**{rs(ic_.inf)}** e **{rs(ic_.sup)}** por mês, com {conf:.0%} de confiança "
@@ -129,11 +144,11 @@ if ic_a and ic_b and ic_d:
 
     variacao = abs(ic_d.media)
     if ic_d.inf > 0:
-        st.error(f"⚠ **Aumento estatisticamente claro.** De {ano - 1} para {ano}, o gasto mensal típico subiu "
+        st.error(f"⚠ **Aumento estatisticamente claro.** De {ANO_BASE} para {ANO_COMPARA}, o gasto mensal típico subiu "
                  f"entre {rs(ic_d.inf)} e {rs(ic_d.sup)} por mês, com {conf:.0%} de confiança "
                  f"(aumento estimado de {rs(variacao)}/mês).")
     elif ic_d.sup < 0:
-        st.success(f"✓ **Redução estatisticamente clara.** De {ano - 1} para {ano}, o gasto mensal típico caiu "
+        st.success(f"✓ **Redução estatisticamente clara.** De {ANO_BASE} para {ANO_COMPARA}, o gasto mensal típico caiu "
                    f"entre {rs(-ic_d.sup)} e {rs(-ic_d.inf)} por mês, com {conf:.0%} de confiança "
                    f"(redução estimada de {rs(variacao)}/mês).")
     else:
